@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warehouse Flow Simulator</title>
+<meta name="description" content="Watch orders move through a warehouse line, change staffing and work times, and see where the bottleneck forms. By Yousif Abdelbagi.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --floor:#C9CDD0;
+  --panel:#EEF0F1;
+  --ink:#1E2328;
+  --ink-soft:#5A626B;
+  --tape:#F2C200;
+  --kraft:#B27B48;
+  --kraft-dark:#7E5330;
+  --busy:#2F8F5B;
+  --alert:#C8372D;
+  --line:#AEB4BA;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --floor:#2A2F35; --panel:#1C2025; --ink:#E7EAED; --ink-soft:#9AA3AD;
+    --line:#434A52; --kraft:#C48A55; --kraft-dark:#8E6038;
+  }
+}
+:root[data-theme="dark"]{
+  --floor:#2A2F35; --panel:#1C2025; --ink:#E7EAED; --ink-soft:#9AA3AD;
+  --line:#434A52; --kraft:#C48A55; --kraft-dark:#8E6038;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--panel);color:var(--ink);font-family:"Barlow",system-ui,sans-serif;font-size:16px;line-height:1.5}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--tape);outline-offset:2px}
+
+header{max-width:1240px;margin:0 auto;padding:28px 16px 8px;display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+h1{margin:0;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:clamp(34px,5vw,52px);line-height:1;letter-spacing:-.01em}
+.sub{margin:6px 0 0;color:var(--ink-soft);max-width:60ch}
+.by{color:var(--ink-soft);font-size:14px}
+
+main{max-width:1240px;margin:0 auto;padding:12px 16px 40px;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px}
+
+/* the floor */
+.floor{background:var(--floor);border-radius:6px;position:relative;overflow:hidden}
+canvas#floor{display:block;width:100%;height:auto}
+.floorbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line)}
+.btn{font:inherit;font-weight:600;border:1.5px solid var(--ink);background:transparent;color:var(--ink);padding:6px 14px;border-radius:4px;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--panel)}
+.btn:hover{border-color:var(--kraft-dark)}
+.clock{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+.speed input{accent-color:var(--kraft-dark)}
+.speed{display:flex;align-items:center;gap:6px;color:var(--ink-soft);font-size:14px}
+
+/* message strip */
+.verdict{margin:14px 0 0;padding:12px 14px;border-left:5px solid var(--tape);background:var(--floor);border-radius:0 6px 6px 0}
+.verdict.bad{border-left-color:var(--alert)}
+.verdict b{font-weight:700}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+.stat{background:var(--floor);border-radius:6px;padding:10px 12px}
+.stat .v{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .l{font-size:13px;color:var(--ink-soft)}
+.little{margin:10px 0 0;font-size:14px;color:var(--ink-soft)}
+
+.chartbox{margin-top:14px;background:var(--floor);border-radius:6px;padding:10px 12px}
+.chartbox h2{margin:0 0 6px;font-size:15px;font-weight:600}
+canvas#chart{display:block;width:100%;height:170px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--ink-soft);margin-top:6px}
+.legend span::before{content:"";display:inline-block;width:14px;height:3px;margin-right:6px;vertical-align:middle;background:var(--c)}
+
+/* controls */
+aside{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--floor);border-radius:6px;padding:12px 14px}
+.card h2{margin:0 0 8px;font-size:15px;font-weight:600}
+.presets{display:flex;flex-wrap:wrap;gap:8px}
+.presets .btn{font-size:14px;padding:4px 10px}
+.ctl{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;margin:8px 0}
+.ctl label{font-size:14px}
+.ctl output{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px}
+.ctl input{grid-column:1 / -1;width:100%;accent-color:var(--kraft-dark)}
+.station{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.station:first-of-type{border-top:none;margin-top:0;padding-top:0}
+.station .name{font-weight:700;display:flex;justify-content:space-between;align-items:baseline}
+.station .cap{font-weight:500;font-size:13px;color:var(--ink-soft)}
+.station.bottle .name{color:var(--alert)}
+.note{font-size:13px;color:var(--ink-soft);margin:0}
+
+footer{max-width:1240px;margin:0 auto;padding:0 16px 32px;color:var(--ink-soft);font-size:14px}
+
+@media (max-width:900px){
+  main{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-reduced-motion:reduce){ .btn{transition:none} }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Warehouse Flow Simulator</h1>
+    <p class="sub">Orders arrive, move through four stations, and ship. Change the staffing and work times, and watch where the line backs up.</p>
+  </div>
+  <div class="by">Built by <a href="https://polosgrave-st.github.io">Yousif Abdelbagi</a></div>
+</header>
+
+<main>
+  <div>
+    <div class="floor">
+      <canvas id="floor" width="900" height="380" aria-label="Warehouse floor showing orders moving through receiving, picking, packing, and shipping"></canvas>
+      <div class="floorbar">
+        <button class="btn primary" id="play" type="button">Pause</button>
+        <button class="btn" id="reset" type="button">Restart</button>
+        <div class="speed">
+          <label for="speed">Speed</label>
+          <input id="speed" type="range" min="1" max="20" value="6">
+          <output id="speedOut">6×</output>
+        </div>
+        <span class="clock" id="clock">Shift time 0:00</span>
+      </div>
+    </div>
+
+    <p class="verdict" id="verdict" role="status">Starting the shift…</p>
+
+    <div class="stats">
+      <div class="stat"><div class="v" id="sThru">0</div><div class="l">orders shipped per hour</div></div>
+      <div class="stat"><div class="v" id="sCycle">–</div><div class="l">avg minutes from arrival to ship</div></div>
+      <div class="stat"><div class="v" id="sWip">0</div><div class="l">orders on the floor right now</div></div>
+      <div class="stat"><div class="v" id="sDone">0</div><div class="l">orders shipped this shift</div></div>
+    </div>
+    <p class="little" id="little"></p>
+
+    <div class="chartbox">
+      <h2>Orders waiting at each station</h2>
+      <canvas id="chart" width="900" height="170"></canvas>
+      <div class="legend" id="legend"></div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2>Try a scenario</h2>
+      <div class="presets">
+        <button class="btn" type="button" data-preset="balanced">Balanced line</button>
+        <button class="btn" type="button" data-preset="packing">Packing bottleneck</button>
+        <button class="btn" type="button" data-preset="rush">Rush hour</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Incoming orders</h2>
+      <div class="ctl">
+        <label for="arrival">Orders arriving per hour</label><output id="arrivalOut"></output>
+        <input id="arrival" type="range" min="10" max="120" step="5">
+      </div>
+      <div class="ctl">
+        <label for="var">Variability in work times</label><output id="varOut"></output>
+        <input id="var" type="range" min="0" max="90" step="10">
+      </div>
+    </div>
+
+    <div class="card" id="stationCtl">
+      <h2>Stations</h2>
+    </div>
+
+    <p class="note">Stats restart whenever you change a setting, so each run is a fair comparison.</p>
+  </aside>
+</main>
+
+<footer>
+  How it works: each order waits in line at a station until a worker is free. A station can handle
+  <i>workers × 60 ÷ minutes per order</i> orders per hour. If more orders arrive than the slowest station can handle,
+  that station is the bottleneck and its line grows without limit.
+</footer>
+
+<script>
+/* ---------------- model ---------------- */
+const NAMES = ["Receiving", "Picking", "Packing", "Shipping"];
+const COLORS = ["#3B6EA8", "#1F9AA0", "#D07A1E", "#8A5BB0"];
+const PRESETS = {
+  balanced: { arrival: 34, variability: 30, stations: [[1,1.2],[2,2.6],[2,2.4],[1,1.1]] },
+  packing:  { arrival: 45, variability: 30, stations: [[1,1.2],[3,3.2],[1,1.6],[1,1.1]] },
+  rush:     { arrival: 80, variability: 50, stations: [[2,1.2],[3,2.0],[3,2.0],[2,1.2]] },
+};
+let cfg;           // { arrival, variability, stations:[{workers, mean}] }
+let sim;           // runtime state
+let playing = true;
+
+function loadPreset(name){
+  const p = PRESETS[name];
+  cfg = { arrival: p.arrival, variability: p.variability,
+          stations: p.stations.map(([w,m]) => ({ workers:w, mean:m })) };
+  buildControls(); restart();
+}
+
+function restart(){
+  sim = {
+    t: 0, nextArrival: expo(60 / cfg.arrival), id: 0,
+    orders: [], queues: cfg.stations.map(() => []),
+    servers: cfg.stations.map(s => Array(s.workers).fill(null)),
+    busyTime: cfg.stations.map(() => 0),
+    done: 0, cycleSum: 0, recent: [],
+    wipArea: 0, history: [], lastSample: -1, leaving: [],
+  };
+}
+
+const rand = Math.random;
+function expo(mean){ return -mean * Math.log(1 - rand()); }
+function workTime(mean){
+  const v = cfg.variability / 100;                 // spread around the mean
+  return Math.max(0.1, mean * (1 + v * (rand() * 2 - 1)));
+}
+
+function step(h){
+  const S = sim;
+  S.t += h;
+  // arrivals
+  while (S.nextArrival <= S.t){
+    if (S.orders.length < 400){
+      const o = { id: S.id++, born: S.nextArrival, stage: 0, x: -30, y: 190 };
+      S.orders.push(o); S.queues[0].push(o);
+    }
+    S.nextArrival += expo(60 / cfg.arrival);
+  }
+  // service
+  cfg.stations.forEach((st, i) => {
+    const sv = S.servers[i];
+    for (let k = 0; k < sv.length; k++){
+      let job = sv[k];
+      if (job){
+        job.left -= h;
+        if (job.left <= 0){
+          sv[k] = null;
+          const o = job.o;
+          if (i < cfg.stations.length - 1){ o.stage = i + 1; S.queues[i + 1].push(o); }
+          else {
+            S.done++; const c = S.t - o.born; S.cycleSum += c;
+            S.recent.push(c); if (S.recent.length > 60) S.recent.shift();
+            S.orders.splice(S.orders.indexOf(o), 1);
+            o.leaving = true; S.leaving.push(o);
+          }
+        }
+      }
+      if (!sv[k] && S.queues[i].length){
+        const o = S.queues[i].shift();
+        sv[k] = { o, left: workTime(st.mean) };
+      }
+    }
+    S.busyTime[i] += h * sv.filter(Boolean).length;
+  });
+  S.wipArea += h * S.orders.length;
+  // sample history every 0.5 sim-min
+  if (S.t - S.lastSample >= 0.5){
+    S.lastSample = S.t;
+    S.history.push(S.queues.map(q => q.length));
+    if (S.history.length > 480) S.history.shift();
+  }
+}
+
+/* ---------------- controls ---------------- */
+const $ = id => document.getElementById(id);
+function buildControls(){
+  $("arrival").value = cfg.arrival; $("var").value = cfg.variability;
+  const box = $("stationCtl");
+  box.querySelectorAll(".station").forEach(n => n.remove());
+  cfg.stations.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.className = "station"; d.id = "st" + i;
+    d.innerHTML = `
+      <div class="name"><span>${NAMES[i]}</span><span class="cap" id="cap${i}"></span></div>
+      <div class="ctl"><label for="w${i}">Workers</label><output id="wo${i}"></output>
+        <input id="w${i}" type="range" min="1" max="5" step="1" value="${s.workers}"></div>
+      <div class="ctl"><label for="m${i}">Minutes per order</label><output id="mo${i}"></output>
+        <input id="m${i}" type="range" min="0.4" max="6" step="0.1" value="${s.mean}"></div>`;
+    box.appendChild(d);
+    d.querySelector(`#w${i}`).addEventListener("input", e => { s.workers = +e.target.value; changed(); });
+    d.querySelector(`#m${i}`).addEventListener("input", e => { s.mean = +e.target.value; changed(); });
+  });
+  syncLabels();
+}
+function capacity(s){ return s.workers * 60 / s.mean; }
+function syncLabels(){
+  $("arrivalOut").textContent = cfg.arrival + "/hr";
+  $("varOut").textContent = cfg.variability === 0 ? "None" : "±" + cfg.variability + "%";
+  cfg.stations.forEach((s, i) => {
+    $("wo" + i).textContent = s.workers;
+    $("mo" + i).textContent = s.mean.toFixed(1);
+    $("cap" + i).textContent = "handles " + Math.round(capacity(s)) + "/hr";
+  });
+}
+function changed(){ syncLabels(); restart(); }
+$("arrival").addEventListener("input", e => { cfg.arrival = +e.target.value; changed(); });
+$("var").addEventListener("input", e => { cfg.variability = +e.target.value; changed(); });
+document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => loadPreset(b.dataset.preset)));
+$("play").addEventListener("click", () => { playing = !playing; $("play").textContent = playing ? "Pause" : "Play"; });
+$("reset").addEventListener("click", restart);
+$("speed").addEventListener("input", e => $("speedOut").textContent = e.target.value + "×");
+$("legend").innerHTML = NAMES.map((n, i) => `<span style="--c:${COLORS[i]}">${n}</span>`).join("");
+
+/* ---------------- drawing ---------------- */
+const fc = $("floor"), fx = fc.getContext("2d");
+const cc = $("chart"), cx = cc.getContext("2d");
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function fit(c, h){
+  const r = devicePixelRatio || 1, w = c.clientWidth;
+  if (c.width !== Math.round(w * r) || c.height !== Math.round(h * r)){ c.width = Math.round(w * r); c.height = Math.round(h * r); }
+  c.style.height = h + "px";
+  return { w, h, r };
+}
+
+function layout(W){
+  const left = 40, right = 40, cell = (W - left - right) / 4;
+  return cfg.stations.map((s, i) => {
+    const x0 = left + i * cell;
+    return { qx: x0 + 8, qw: cell * 0.46, sx: x0 + cell * 0.52, sw: cell * 0.42 };
+  });
+}
+
+function targetFor(o, L, H){
+  const S = sim;
+  // in service?
+  for (let i = 0; i < S.servers.length; i++){
+    const k = S.servers[i].findIndex(j => j && j.o === o);
+    if (k >= 0){
+      const n = S.servers[i].length, gap = Math.min(52, (H - 120) / n);
+      return { x: L[i].sx + L[i].sw * 0.62, y: H / 2 - (n - 1) * gap / 2 + k * gap, busy: true };
+    }
+  }
+  const i = o.stage, q = S.queues[i].indexOf(o);
+  const per = Math.max(2, Math.floor(L[i].qw / 18));
+  const col = q % per, row = Math.floor(q / per);
+  return { x: L[i].qx + 10 + col * 18, y: 92 + row * 18 };
+}
+
+function drawFloor(){
+  const { w: W, h: H, r } = fit(fc, Math.max(300, Math.min(400, fc.clientWidth * 0.42)));
+  fx.setTransform(r, 0, 0, r, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  const L = layout(W), tape = css("--tape"), ink = css("--ink"), soft = css("--ink-soft");
+  const util = utilization(), worst = bottleneck(util);
+
+  // lane line
+  fx.strokeStyle = tape; fx.lineWidth = 3; fx.setLineDash([14, 10]);
+  fx.beginPath(); fx.moveTo(0, H - 34); fx.lineTo(W, H - 34); fx.stroke(); fx.setLineDash([]);
+
+  L.forEach((z, i) => {
+    // queue zone
+    fx.strokeStyle = soft; fx.globalAlpha = .55; fx.lineWidth = 1.5; fx.setLineDash([4, 5]);
+    fx.strokeRect(z.qx, 80, z.qw, H - 140); fx.setLineDash([]); fx.globalAlpha = 1;
+    // station zone in floor tape
+    const isB = i === worst && util[i] > 0.75;
+    fx.strokeStyle = isB ? css("--alert") : tape; fx.lineWidth = isB ? 5 : 4;
+    fx.strokeRect(z.sx, 70, z.sw, H - 120);
+    // names
+    const compact = (z.sx + z.sw - z.qx) < 150, u = Math.round(util[i] * 100);
+    fx.fillStyle = ink; fx.textAlign = "left";
+    fx.font = compact ? "700 14px 'Barlow Condensed', sans-serif" : "700 20px 'Barlow Condensed', sans-serif";
+    fx.fillText(NAMES[i], z.qx, compact ? 26 : 34);
+    fx.fillStyle = isB ? css("--alert") : soft;
+    if (compact){
+      fx.font = "500 11px Barlow, sans-serif";
+      fx.fillText(u + "% busy", z.qx, 44);
+      fx.fillText(sim.queues[i].length + " waiting", z.qx, 58);
+    } else {
+      fx.font = "500 13px Barlow, sans-serif";
+      fx.fillText((isB ? "Bottleneck · " : "") + u + "% busy · " + sim.queues[i].length + " waiting", z.qx, 54);
+    }
+    // workers
+    const n = sim.servers[i].length, gap = Math.min(52, (H - 120) / n);
+    for (let k = 0; k < n; k++){
+      const y = H / 2 - (n - 1) * gap / 2 + k * gap, busy = !!sim.servers[i][k];
+      fx.beginPath(); fx.arc(z.sx + z.sw * 0.28, y, 9, 0, Math.PI * 2);
+      fx.fillStyle = busy ? css("--busy") : soft; fx.globalAlpha = busy ? 1 : .45; fx.fill(); fx.globalAlpha = 1;
+    }
+  });
+
+  // dock labels
+  fx.fillStyle = soft; fx.font = "500 12px Barlow, sans-serif";
+  fx.save(); fx.translate(16, H / 2); fx.rotate(-Math.PI / 2); fx.textAlign = "center"; fx.fillText("Inbound dock", 0, 0); fx.restore();
+  fx.save(); fx.translate(W - 14, H / 2); fx.rotate(Math.PI / 2); fx.textAlign = "center"; fx.fillText("To trucks", 0, 0); fx.restore();
+
+  // boxes (eased toward targets so motion stays calm)
+  const kraft = css("--kraft"), dark = css("--kraft-dark");
+  const ease = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 0.18;
+  for (const o of sim.orders){
+    const t = targetFor(o, L, H);
+    o.x += (t.x - o.x) * ease; o.y += (t.y - o.y) * ease;
+    box(o.x, o.y, kraft, dark, 1);
+  }
+  sim.leaving = sim.leaving.filter(o => {
+    o.x += (W + 20 - o.x) * 0.08; o.y += (H - 34 - o.y) * 0.08;
+    o.fade = (o.fade ?? 1) - 0.03;
+    if (o.fade > 0) box(o.x, o.y, kraft, dark, o.fade);
+    return o.fade > 0;
+  });
+}
+function box(x, y, fill, edge, a){
+  fx.globalAlpha = a; fx.fillStyle = fill; fx.fillRect(x - 7, y - 7, 14, 14);
+  fx.strokeStyle = edge; fx.lineWidth = 1; fx.strokeRect(x - 7, y - 7, 14, 14);
+  fx.beginPath(); fx.moveTo(x - 7, y); fx.lineTo(x + 7, y); fx.stroke(); fx.globalAlpha = 1;
+}
+
+function drawChart(){
+  const { w: W, h: H, r } = fit(cc, 170);
+  cx.setTransform(r, 0, 0, r, 0, 0); cx.clearRect(0, 0, W, H);
+  const hist = sim.history, pad = 28;
+  const max = Math.max(5, ...hist.flat());
+  cx.strokeStyle = css("--line"); cx.lineWidth = 1; cx.fillStyle = css("--ink-soft"); cx.font = "12px Barlow, sans-serif";
+  [0, .5, 1].forEach(f => {
+    const y = H - 18 - f * (H - 30);
+    cx.beginPath(); cx.moveTo(pad, y); cx.lineTo(W, y); cx.stroke();
+    cx.fillText(Math.round(max * f), 4, y + 4);
+  });
+  cx.fillText("last " + Math.round(hist.length / 2) + " min", W - 80, H - 2);
+  if (hist.length < 2) return;
+  COLORS.forEach((c, i) => {
+    cx.strokeStyle = c; cx.lineWidth = 2; cx.beginPath();
+    hist.forEach((row, k) => {
+      const x = pad + (k / 479) * (W - pad), y = H - 18 - (row[i] / max) * (H - 30);
+      k ? cx.lineTo(x, y) : cx.moveTo(x, y);
+    });
+    cx.stroke();
+  });
+}
+
+/* ---------------- stats ---------------- */
+function utilization(){
+  return cfg.stations.map((s, i) => sim.t > 0 ? Math.min(1, sim.busyTime[i] / (s.workers * sim.t)) : 0);
+}
+function bottleneck(u){ return u.indexOf(Math.max(...u)); }
+
+function updateStats(){
+  const S = sim, hrs = S.t / 60;
+  const thru = hrs > 0.05 ? S.done / hrs : 0;
+  const cycle = S.recent.length ? S.recent.reduce((a, b) => a + b, 0) / S.recent.length : null;
+  $("sThru").textContent = thru ? thru.toFixed(1) : "0";
+  $("sCycle").textContent = cycle != null ? cycle.toFixed(1) : "–";
+  $("sWip").textContent = S.orders.length;
+  $("sDone").textContent = S.done;
+  const m = Math.floor(S.t / 60), mm = Math.floor(S.t % 60);
+  $("clock").textContent = `Shift time ${m}:${String(mm).padStart(2, "0")}`;
+
+  const avgWip = S.t > 0 ? S.wipArea / S.t : 0;
+  const avgCycleAll = S.done ? S.cycleSum / S.done : 0;
+  const stable = cfg.arrival <= Math.min(...cfg.stations.map(capacity));
+  $("little").textContent = S.done < 20 ? "" : stable
+    ? `Little's Law check: average orders on the floor (${avgWip.toFixed(1)}) ≈ throughput × time per order (${(thru / 60 * avgCycleAll).toFixed(1)}).`
+    : "Little's Law only holds when the line is stable. Right now orders pile up faster than they ship.";
+
+  // verdict
+  const caps = cfg.stations.map(capacity), minCap = Math.min(...caps), slow = caps.indexOf(minCap);
+  cfg.stations.forEach((s, i) => $("st" + i).classList.toggle("bottle", i === slow));
+  const v = $("verdict");
+  if (cfg.arrival > minCap){
+    v.className = "verdict bad";
+    v.innerHTML = `<b>${NAMES[slow]} can't keep up.</b> It handles ${Math.round(minCap)} orders/hr but ${cfg.arrival}/hr arrive, so its line will keep growing. Add a worker or speed it up.`;
+  } else if (cfg.arrival > minCap * 0.85){
+    v.className = "verdict";
+    v.innerHTML = `<b>${NAMES[slow]} is running near its limit</b> (${Math.round(cfg.arrival / minCap * 100)}% of capacity). Small slowdowns there will cause long waits.`;
+  } else {
+    v.className = "verdict";
+    v.innerHTML = `<b>The line is keeping up.</b> The slowest station, ${NAMES[slow]}, is using ${Math.round(cfg.arrival / minCap * 100)}% of its capacity.`;
+  }
+}
+
+/* ---------------- loop ---------------- */
+let last = performance.now(), statTick = 0;
+function frame(now){
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing){
+    let adv = dt * (+$("speed").value) * 0.5;   // sim minutes this frame
+    while (adv > 0){ const h = Math.min(0.02, adv); step(h); adv -= h; }
+  }
+  drawFloor();
+  if ((statTick += dt) > 0.25){ statTick = 0; updateStats(); drawChart(); }
+  requestAnimationFrame(frame);
+}
+
+/* theme follows the system; remembered if changed */
+try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch(e){}
+
+loadPreset("packing");
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
